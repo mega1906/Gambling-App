@@ -11,6 +11,51 @@ class BettingPreferences:
 
 
 @dataclass
+class StakeTransaction:
+    transaction_id: int
+    gambler_id: int
+    transaction_type: str
+    amount: float
+    balance_before: float
+    balance_after: float
+    note: str | None
+    created_at: str
+
+
+@dataclass
+class StakeBoundaryStatus:
+    current_stake: float
+    upper_limit: float
+    lower_limit: float
+    warning_level: str
+    within_bounds: bool
+
+
+@dataclass
+class StakeMonitorSummary:
+    current_stake: float
+    peak_stake: float
+    lowest_stake: float
+    total_change: float
+    volatility: float
+    transaction_count: int
+
+
+@dataclass
+class StakeHistoryReport:
+    gambler_id: int
+    current_stake: float
+    total_transactions: int
+    deposits_total: float
+    withdrawals_total: float
+    bet_wins_total: float
+    bet_losses_total: float
+    adjustments_total: float
+    net_change: float
+    transactions: list[StakeTransaction]
+
+
+@dataclass
 class GamblerStatistics:
     gambler_id: int
     full_name: str

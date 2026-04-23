@@ -67,6 +67,23 @@ def initialize_database():
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS stake_transactions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                gambler_id INT NOT NULL,
+                transaction_type VARCHAR(30) NOT NULL,
+                amount DECIMAL(10, 2) NOT NULL,
+                balance_before DECIMAL(10, 2) NOT NULL,
+                balance_after DECIMAL(10, 2) NOT NULL,
+                note VARCHAR(255),
+                created_at DATETIME NOT NULL,
+                CONSTRAINT fk_stake_transactions_gambler
+                    FOREIGN KEY (gambler_id) REFERENCES gamblers(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
         cursor.execute("SHOW COLUMNS FROM betting_preferences LIKE 'auto_play'")
         if cursor.fetchone():
             cursor.execute("ALTER TABLE betting_preferences DROP COLUMN auto_play")

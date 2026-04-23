@@ -25,6 +25,7 @@ class GamblerProfileService:
     def ensure_gambler_exists(self, gambler_data):
         existing_gambler = self.find_gambler_by_email(gambler_data["email"])
         if existing_gambler:
+            self._ensure_initial_stake_transaction(existing_gambler["id"])
             return existing_gambler["id"]
 
         return self.create_gambler(
@@ -94,6 +95,22 @@ class GamblerProfileService:
                     clean_preferences["session_game_limit"],
                     clean_preferences["notes"],
                     timestamp,
+                    timestamp,
+                ),
+            )
+            cursor.execute(
+                """
+                INSERT INTO stake_transactions (
+                    gambler_id, transaction_type, amount, balance_before, balance_after, note, created_at
+                )
+                VALUES (%s, 'INITIAL_STAKE', %s, %s, %s, %s, %s)
+                """,
+                (
+                    gambler_id,
+                    initial_stake,
+                    Decimal("0.00"),
+                    initial_stake,
+                    "Initial stake recorded during profile creation",
                     timestamp,
                 ),
             )
@@ -363,6 +380,37 @@ class GamblerProfileService:
 
     def _get_preferences_row(self, gambler_id):
         return fetch_one("SELECT * FROM betting_preferences WHERE gambler_id = %s", (gambler_id,))
+
+    def _ensure_initial_stake_transaction(self, gambler_id):
+        existing_transaction = fetch_one(
+            """
+            SELECT id
+            FROM stake_transactions
+            WHERE gambler_id = %s AND transaction_type = 'INITIAL_STAKE'
+            LIMIT 1
+            """,
+            (gambler_id,),
+        )
+        if existing_transaction:
+            return
+
+        gambler = self._get_gambler_row(gambler_id)
+        execute_write(
+            """
+            INSERT INTO stake_transactions (
+                gambler_id, transaction_type, amount, balance_before, balance_after, note, created_at
+            )
+            VALUES (%s, 'INITIAL_STAKE', %s, %s, %s, %s, %s)
+            """,
+            (
+                gambler_id,
+                gambler["initial_stake"],
+                Decimal("0.00"),
+                gambler["initial_stake"],
+                "Initial stake backfilled for existing user",
+                self._now(),
+            ),
+        )
 
     @staticmethod
     def _get_threshold_status(current_stake, win_threshold, loss_threshold):
