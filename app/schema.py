@@ -128,6 +128,67 @@ def initialize_database():
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS gaming_sessions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                gambler_id INT NOT NULL,
+                status VARCHAR(20) NOT NULL,
+                end_reason VARCHAR(40) NULL,
+                default_bet_amount DECIMAL(10, 2) NOT NULL,
+                default_win_probability DECIMAL(5, 4) NOT NULL,
+                max_games INT NOT NULL,
+                total_games_played INT NOT NULL DEFAULT 0,
+                total_wins INT NOT NULL DEFAULT 0,
+                total_losses INT NOT NULL DEFAULT 0,
+                total_profit DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+                total_pause_seconds INT NOT NULL DEFAULT 0,
+                started_at DATETIME NOT NULL,
+                ended_at DATETIME NULL,
+                updated_at DATETIME NOT NULL,
+                CONSTRAINT fk_gaming_sessions_gambler
+                    FOREIGN KEY (gambler_id) REFERENCES gamblers(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS game_records (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                session_id INT NOT NULL,
+                bet_id INT NOT NULL,
+                game_number INT NOT NULL,
+                bet_amount DECIMAL(10, 2) NOT NULL,
+                outcome VARCHAR(10) NOT NULL,
+                payout_amount DECIMAL(10, 2) NOT NULL,
+                stake_before DECIMAL(10, 2) NOT NULL,
+                stake_after DECIMAL(10, 2) NOT NULL,
+                played_at DATETIME NOT NULL,
+                CONSTRAINT fk_game_records_session
+                    FOREIGN KEY (session_id) REFERENCES gaming_sessions(id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_game_records_bet
+                    FOREIGN KEY (bet_id) REFERENCES bets(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS pause_records (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                session_id INT NOT NULL,
+                pause_reason VARCHAR(100) NOT NULL,
+                paused_at DATETIME NOT NULL,
+                resumed_at DATETIME NULL,
+                pause_seconds INT NOT NULL DEFAULT 0,
+                CONSTRAINT fk_pause_records_session
+                    FOREIGN KEY (session_id) REFERENCES gaming_sessions(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
         cursor.execute("SHOW COLUMNS FROM betting_preferences LIKE 'auto_play'")
         if cursor.fetchone():
             cursor.execute("ALTER TABLE betting_preferences DROP COLUMN auto_play")

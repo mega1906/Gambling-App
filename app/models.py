@@ -86,6 +86,51 @@ class BettingSessionSummary:
 
 
 @dataclass
+class GamePlayRecord:
+    game_id: int
+    session_id: int
+    bet_id: int
+    game_number: int
+    bet_amount: float
+    outcome: str
+    payout_amount: float
+    stake_before: float
+    stake_after: float
+    played_at: str
+
+
+@dataclass
+class PauseRecord:
+    pause_id: int
+    session_id: int
+    pause_reason: str
+    paused_at: str
+    resumed_at: str | None
+    pause_seconds: int
+
+
+@dataclass
+class GamingSessionSummary:
+    session_id: int
+    gambler_id: int
+    status: str
+    end_reason: str | None
+    default_bet_amount: float
+    default_win_probability: float
+    max_games: int
+    total_games_played: int
+    total_wins: int
+    total_losses: int
+    total_profit: float
+    current_stake: float
+    started_at: str
+    ended_at: str | None
+    total_pause_seconds: int
+    games: list[GamePlayRecord]
+    pauses: list[PauseRecord]
+
+
+@dataclass
 class GamblerStatistics:
     gambler_id: int
     full_name: str

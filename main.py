@@ -2,6 +2,7 @@ from app.default_user import CURRENT_USER
 from app.exceptions import ValidationException
 from app.schema import initialize_database
 from app.services.betting_service import STRATEGY_TYPES, BettingService
+from app.services.game_session_service import GameSessionService
 from app.services.gambler_profile_service import GAME_TYPES, GamblerProfileService
 from app.services.stake_management_service import StakeManagementService
 
@@ -253,6 +254,62 @@ def show_recent_bets(bets):
         )
 
 
+def show_session_list(sessions):
+    print_header("Game Sessions")
+    if not sessions:
+        print("No game sessions found.")
+        return
+
+    for session in sessions:
+        print(
+            f"{session['id']}. Status: {session['status']} | "
+            f"Games: {session['total_games_played']}/{session['max_games']} | "
+            f"Profit: {session['total_profit']:.2f} | "
+            f"Started: {session['started_at']}"
+        )
+
+
+def show_game_session_summary(summary):
+    print_header("Game Session Summary")
+    print(f"Session ID: {summary.session_id}")
+    print(f"Status: {summary.status}")
+    print(f"End Reason: {summary.end_reason}")
+    print(f"Default Bet Amount: {summary.default_bet_amount:.2f}")
+    print(f"Default Win Probability: {summary.default_win_probability:.2f}")
+    print(f"Max Games: {summary.max_games}")
+    print(f"Total Games Played: {summary.total_games_played}")
+    print(f"Total Wins: {summary.total_wins}")
+    print(f"Total Losses: {summary.total_losses}")
+    print(f"Total Profit: {summary.total_profit:.2f}")
+    print(f"Current Stake: {summary.current_stake:.2f}")
+    print(f"Started At: {summary.started_at}")
+    print(f"Ended At: {summary.ended_at}")
+    print(f"Total Pause Seconds: {summary.total_pause_seconds}")
+    print_header("Games")
+    if not summary.games:
+        print("No games played yet.")
+    else:
+        for game in summary.games:
+            print(
+                f"{game.game_number}. Bet #{game.bet_id} | "
+                f"Amount: {game.bet_amount:.2f} | "
+                f"Outcome: {game.outcome} | "
+                f"Payout: {game.payout_amount:.2f} | "
+                f"Stake After: {game.stake_after:.2f}"
+            )
+    print_header("Pauses")
+    if not summary.pauses:
+        print("No pauses recorded.")
+    else:
+        for pause in summary.pauses:
+            print(
+                f"{pause.pause_id}. {pause.pause_reason} | "
+                f"Paused: {pause.paused_at} | "
+                f"Resumed: {pause.resumed_at} | "
+                f"Seconds: {pause.pause_seconds}"
+            )
+
+
 def collect_user_data():
     full_name = read_text("Name")
     email = read_text("Email")
@@ -474,7 +531,118 @@ def betting_menu(service, gambler_id):
             return
 
 
-def selected_user_menu(profile_service, stake_service, betting_service, gambler_id):
+def start_game_session_flow(service, gambler_id):
+    default_bet_amount = read_number("Default Bet Amount", minimum=0.01)
+    default_win_probability = read_probability()
+    max_games = read_int("Max Games", minimum=1)
+    session_id = service.start_new_session(gambler_id, default_bet_amount, default_win_probability, max_games)
+    print(f"Game session created successfully. Session ID: {session_id}")
+
+
+def choose_game_session(service, gambler_id):
+    sessions = service.list_sessions(gambler_id)
+    show_session_list(sessions)
+    if not sessions:
+        return None
+
+    valid_ids = [str(session["id"]) for session in sessions]
+    session_id = choose_option("Enter session id", valid_ids)
+    return int(session_id)
+
+
+def play_one_game_flow(service, session_id):
+    custom_choice = choose_option("Use session defaults? 1 for yes, 2 for no", ["1", "2"])
+    if custom_choice == "1":
+        results = service.play_games(session_id, 1)
+    else:
+        bet_amount = read_number("Bet Amount", minimum=0.01)
+        probability = read_probability()
+        results = service.play_games(session_id, 1, bet_amount, probability)
+
+    if results:
+        show_bet_record(results[-1])
+
+
+def autoplay_session_flow(service, session_id):
+    games_count = read_int("How many games to autoplay", minimum=1)
+    custom_choice = choose_option("Use session defaults? 1 for yes, 2 for no", ["1", "2"])
+    if custom_choice == "1":
+        service.play_games(session_id, games_count)
+    else:
+        bet_amount = read_number("Bet Amount", minimum=0.01)
+        probability = read_probability()
+        service.play_games(session_id, games_count, bet_amount, probability)
+    show_game_session_summary(service.get_session_summary(session_id))
+
+
+def pause_session_flow(service, session_id):
+    reason = read_text("Pause Reason")
+    service.pause_session(session_id, reason)
+    print("Session paused.")
+
+
+def resume_session_flow(service, session_id):
+    service.resume_session(session_id)
+    print("Session resumed.")
+
+
+def end_session_flow(service, session_id):
+    service.end_session(session_id)
+    print("Session ended.")
+
+
+def game_session_detail_menu(service, session_id):
+    while True:
+        print_header("Game Session Menu")
+        print("1. View session summary")
+        print("2. Play one game")
+        print("3. Autoplay multiple games")
+        print("4. Pause session")
+        print("5. Resume session")
+        print("6. End session")
+        print("7. Back")
+
+        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5", "6", "7"])
+
+        if choice == "1":
+            show_game_session_summary(service.get_session_summary(session_id))
+        elif choice == "2":
+            play_one_game_flow(service, session_id)
+        elif choice == "3":
+            autoplay_session_flow(service, session_id)
+        elif choice == "4":
+            pause_session_flow(service, session_id)
+        elif choice == "5":
+            resume_session_flow(service, session_id)
+        elif choice == "6":
+            end_session_flow(service, session_id)
+        else:
+            return
+
+
+def game_sessions_menu(service, gambler_id):
+    while True:
+        print_header("Game Sessions Menu")
+        print("1. Start new session")
+        print("2. Open session")
+        print("3. Show all sessions")
+        print("4. Back")
+
+        choice = choose_option("Choose an option", ["1", "2", "3", "4"])
+
+        if choice == "1":
+            start_game_session_flow(service, gambler_id)
+        elif choice == "2":
+            session_id = choose_game_session(service, gambler_id)
+            if session_id is not None:
+                game_session_detail_menu(service, session_id)
+        elif choice == "3":
+            show_session_list(service.list_sessions(gambler_id))
+        else:
+            return
+
+
+def selected_user_menu(profile_service, stake_service, betting_service, game_session_service, gambler_id):
     while True:
         print_header("Selected User Menu")
         print("1. View user details")
@@ -484,9 +652,10 @@ def selected_user_menu(profile_service, stake_service, betting_service, gambler_
         print("5. Deactivate user")
         print("6. Stake management")
         print("7. Betting")
-        print("8. Back")
+        print("8. Game sessions")
+        print("9. Back")
 
-        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5", "6", "7", "8"])
+        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5", "6", "7", "8", "9"])
 
         if choice == "1":
             show_gambler_details(profile_service.retrieve_gambler_statistics(gambler_id))
@@ -503,6 +672,8 @@ def selected_user_menu(profile_service, stake_service, betting_service, gambler_
             stake_management_menu(stake_service, gambler_id)
         elif choice == "7":
             betting_menu(betting_service, gambler_id)
+        elif choice == "8":
+            game_sessions_menu(game_session_service, gambler_id)
         else:
             return
 
@@ -512,6 +683,7 @@ def main():
     profile_service = GamblerProfileService(minimum_stake=MINIMUM_STAKE)
     stake_service = StakeManagementService()
     betting_service = BettingService()
+    game_session_service = GameSessionService(betting_service)
     profile_service.ensure_gambler_exists(CURRENT_USER)
     show_startup_info(init_result)
 
@@ -530,7 +702,7 @@ def main():
             elif choice == "2":
                 gambler_id = choose_current_user(profile_service)
                 if gambler_id is not None:
-                    selected_user_menu(profile_service, stake_service, betting_service, gambler_id)
+                    selected_user_menu(profile_service, stake_service, betting_service, game_session_service, gambler_id)
             elif choice == "3":
                 show_gambler_list(profile_service.list_gamblers())
             else:
