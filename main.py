@@ -1,6 +1,7 @@
 from app.default_user import CURRENT_USER
 from app.exceptions import ValidationException
 from app.schema import initialize_database
+from app.services.betting_service import STRATEGY_TYPES, BettingService
 from app.services.gambler_profile_service import GAME_TYPES, GamblerProfileService
 from app.services.stake_management_service import StakeManagementService
 
@@ -94,6 +95,15 @@ def choose_game_type():
     return GAME_TYPES[int(choice) - 1]
 
 
+def choose_strategy_type():
+    print_header("Betting Strategies")
+    for index, strategy in enumerate(STRATEGY_TYPES, start=1):
+        print(f"{index}. {strategy}")
+
+    choice = choose_option("Choose strategy", [str(index) for index in range(1, len(STRATEGY_TYPES) + 1)])
+    return STRATEGY_TYPES[int(choice) - 1]
+
+
 def show_startup_info(init_result):
     print_header(APP_TITLE)
     print(f"Database: {init_result['database']}")
@@ -185,6 +195,62 @@ def show_history_report(report):
         )
         if transaction.note:
             print(f"   {transaction.note}")
+
+
+def show_bet_record(bet):
+    print_header("Bet Result")
+    print(f"Bet ID: {bet.bet_id}")
+    print(f"Strategy: {bet.strategy_type}")
+    print(f"Amount: {bet.bet_amount:.2f}")
+    print(f"Win Probability: {bet.win_probability:.2f}")
+    print(f"Odds Multiplier: {bet.odds_multiplier:.2f}")
+    print(f"Outcome: {bet.outcome}")
+    print(f"Payout: {bet.payout_amount:.2f}")
+    print(f"Stake Before: {bet.stake_before:.2f}")
+    print(f"Stake After: {bet.stake_after:.2f}")
+    print(f"Placed At: {bet.placed_at}")
+
+
+def show_betting_session_summary(summary):
+    print_header("Betting Session Summary")
+    print(f"Session ID: {summary.session_id}")
+    print(f"Strategy: {summary.strategy_type}")
+    print(f"Total Bets: {summary.total_bets}")
+    print(f"Total Wins: {summary.total_wins}")
+    print(f"Total Losses: {summary.total_losses}")
+    print(f"Total Profit: {summary.total_profit:.2f}")
+    print(f"Started At: {summary.started_at}")
+    print(f"Ended At: {summary.ended_at}")
+    print_header("Session Bets")
+    if not summary.bets:
+        print("No bets found.")
+        return
+
+    for bet in summary.bets:
+        print(
+            f"{bet.bet_id}. {bet.strategy_type} | "
+            f"Amount: {bet.bet_amount:.2f} | "
+            f"Outcome: {bet.outcome} | "
+            f"Payout: {bet.payout_amount:.2f} | "
+            f"Stake After: {bet.stake_after:.2f}"
+        )
+
+
+def show_recent_bets(bets):
+    print_header("Recent Bets")
+    if not bets:
+        print("No bets found.")
+        return
+
+    for bet in bets:
+        print(
+            f"{bet.bet_id}. {bet.strategy_type} | "
+            f"Amount: {bet.bet_amount:.2f} | "
+            f"Outcome: {bet.outcome} | "
+            f"Payout: {bet.payout_amount:.2f} | "
+            f"Stake After: {bet.stake_after:.2f} | "
+            f"{bet.placed_at}"
+        )
 
 
 def collect_user_data():
@@ -319,6 +385,10 @@ def adjust_stake_flow(service, gambler_id):
     print("Stake adjusted successfully.")
 
 
+def read_probability():
+    return read_number("Win Probability", greater_than=0, less_than=1)
+
+
 def stake_management_menu(service, gambler_id):
     while True:
         print_header("Stake Management Menu")
@@ -354,7 +424,57 @@ def stake_management_menu(service, gambler_id):
             return
 
 
-def selected_user_menu(profile_service, stake_service, gambler_id):
+def place_single_bet_flow(service, gambler_id):
+    amount = read_number("Bet Amount", minimum=0.01)
+    probability = read_probability()
+    bet = service.place_bet(gambler_id, amount, probability, "FIXED_AMOUNT")
+    show_bet_record(bet)
+
+
+def place_strategy_bets_flow(service, gambler_id):
+    strategy_type = choose_strategy_type()
+    probability = read_probability()
+    rounds = read_int("Number of Bets", minimum=1)
+    fixed_amount = None
+    percentage_value = None
+
+    if strategy_type in {"FIXED_AMOUNT", "MARTINGALE", "REVERSE_MARTINGALE", "FIBONACCI", "DALEMBERT"}:
+        fixed_amount = read_number("Base Bet Amount", minimum=0.01)
+    elif strategy_type == "PERCENTAGE":
+        percentage_value = read_number("Percentage of Current Stake", greater_than=0, less_than=100)
+
+    summary = service.place_bet_with_strategy(
+        gambler_id,
+        strategy_type,
+        probability,
+        fixed_amount=fixed_amount,
+        percentage_value=percentage_value,
+        rounds=rounds,
+    )
+    show_betting_session_summary(summary)
+
+
+def betting_menu(service, gambler_id):
+    while True:
+        print_header("Betting Menu")
+        print("1. Place single bet")
+        print("2. Place strategy bets")
+        print("3. Show recent bets")
+        print("4. Back")
+
+        choice = choose_option("Choose an option", ["1", "2", "3", "4"])
+
+        if choice == "1":
+            place_single_bet_flow(service, gambler_id)
+        elif choice == "2":
+            place_strategy_bets_flow(service, gambler_id)
+        elif choice == "3":
+            show_recent_bets(service.get_recent_bets(gambler_id))
+        else:
+            return
+
+
+def selected_user_menu(profile_service, stake_service, betting_service, gambler_id):
     while True:
         print_header("Selected User Menu")
         print("1. View user details")
@@ -363,9 +483,10 @@ def selected_user_menu(profile_service, stake_service, gambler_id):
         print("4. Reset user")
         print("5. Deactivate user")
         print("6. Stake management")
-        print("7. Back")
+        print("7. Betting")
+        print("8. Back")
 
-        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5", "6", "7"])
+        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5", "6", "7", "8"])
 
         if choice == "1":
             show_gambler_details(profile_service.retrieve_gambler_statistics(gambler_id))
@@ -380,6 +501,8 @@ def selected_user_menu(profile_service, stake_service, gambler_id):
             print("User deactivated.")
         elif choice == "6":
             stake_management_menu(stake_service, gambler_id)
+        elif choice == "7":
+            betting_menu(betting_service, gambler_id)
         else:
             return
 
@@ -388,6 +511,7 @@ def main():
     init_result = initialize_database()
     profile_service = GamblerProfileService(minimum_stake=MINIMUM_STAKE)
     stake_service = StakeManagementService()
+    betting_service = BettingService()
     profile_service.ensure_gambler_exists(CURRENT_USER)
     show_startup_info(init_result)
 
@@ -406,7 +530,7 @@ def main():
             elif choice == "2":
                 gambler_id = choose_current_user(profile_service)
                 if gambler_id is not None:
-                    selected_user_menu(profile_service, stake_service, gambler_id)
+                    selected_user_menu(profile_service, stake_service, betting_service, gambler_id)
             elif choice == "3":
                 show_gambler_list(profile_service.list_gamblers())
             else:

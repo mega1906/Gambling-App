@@ -56,6 +56,36 @@ class StakeHistoryReport:
 
 
 @dataclass
+class BetRecord:
+    bet_id: int
+    gambler_id: int
+    session_id: int | None
+    strategy_type: str
+    bet_amount: float
+    win_probability: float
+    odds_multiplier: float
+    outcome: str
+    payout_amount: float
+    stake_before: float
+    stake_after: float
+    placed_at: str
+
+
+@dataclass
+class BettingSessionSummary:
+    session_id: int
+    gambler_id: int
+    strategy_type: str
+    total_bets: int
+    total_wins: int
+    total_losses: int
+    total_profit: float
+    started_at: str
+    ended_at: str | None
+    bets: list[BetRecord]
+
+
+@dataclass
 class GamblerStatistics:
     gambler_id: int
     full_name: str

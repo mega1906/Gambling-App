@@ -84,6 +84,50 @@ def initialize_database():
             )
             """
         )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS betting_sessions (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                gambler_id INT NOT NULL,
+                strategy_type VARCHAR(40) NOT NULL,
+                status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE',
+                total_bets INT NOT NULL DEFAULT 0,
+                total_wins INT NOT NULL DEFAULT 0,
+                total_losses INT NOT NULL DEFAULT 0,
+                total_profit DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+                started_at DATETIME NOT NULL,
+                ended_at DATETIME NULL,
+                CONSTRAINT fk_betting_sessions_gambler
+                    FOREIGN KEY (gambler_id) REFERENCES gamblers(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS bets (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                gambler_id INT NOT NULL,
+                session_id INT NULL,
+                strategy_type VARCHAR(40) NOT NULL,
+                bet_amount DECIMAL(10, 2) NOT NULL,
+                win_probability DECIMAL(5, 4) NOT NULL,
+                odds_multiplier DECIMAL(10, 2) NOT NULL,
+                outcome VARCHAR(10) NOT NULL,
+                payout_amount DECIMAL(10, 2) NOT NULL,
+                stake_before DECIMAL(10, 2) NOT NULL,
+                stake_after DECIMAL(10, 2) NOT NULL,
+                placed_at DATETIME NOT NULL,
+                settled_at DATETIME NOT NULL,
+                CONSTRAINT fk_bets_gambler
+                    FOREIGN KEY (gambler_id) REFERENCES gamblers(id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_bets_session
+                    FOREIGN KEY (session_id) REFERENCES betting_sessions(id)
+                    ON DELETE SET NULL
+            )
+            """
+        )
         cursor.execute("SHOW COLUMNS FROM betting_preferences LIKE 'auto_play'")
         if cursor.fetchone():
             cursor.execute("ALTER TABLE betting_preferences DROP COLUMN auto_play")
