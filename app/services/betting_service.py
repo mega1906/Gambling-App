@@ -4,6 +4,7 @@ from decimal import Decimal
 from app.db import fetch_all, fetch_one, get_connection
 from app.exceptions import ValidationException
 from app.models import BetRecord, BettingSessionSummary
+from app.validation import InputValidator, ValidationConfig
 
 
 STRATEGY_TYPES = [
@@ -27,6 +28,9 @@ ODDS_TYPES = [
 
 
 class BettingService:
+    def __init__(self):
+        self.validator = InputValidator(ValidationConfig(allow_zero_stake=True))
+
     def place_bet(
         self,
         gambler_id,
@@ -44,9 +48,19 @@ class BettingService:
         if not gambler or not preferences:
             raise ValidationException("Gambler profile not found.")
 
-        bet_amount = self._to_decimal(bet_amount)
-        win_probability = self._to_decimal(win_probability)
-        house_edge = self._to_decimal(house_edge)
+        max_limit = float(preferences["max_bet"])
+        current_stake_limit = float(gambler["current_stake"])
+        bet_amount = self._to_decimal(
+            self.validator.validate_bet_amount(
+                bet_amount,
+                current_stake=current_stake_limit,
+                min_bet=float(preferences["min_bet"]),
+                max_bet=max_limit,
+                field_name="bet_amount",
+            )
+        )
+        win_probability = self._to_decimal(self.validator.validate_probability(win_probability, "win_probability"))
+        house_edge = self._to_decimal(self.validator.parse_and_validate_numeric(house_edge, "house_edge"))
         strategy_type = strategy_type.upper()
         outcome_strategy = outcome_strategy.upper()
         odds_type = odds_type.upper()
@@ -434,23 +448,8 @@ class BettingService:
             raise ValidationException("Choose a valid outcome strategy.")
         if odds_type not in ODDS_TYPES:
             raise ValidationException("Choose a valid odds type.")
-        if bet_amount <= 0:
-            raise ValidationException("Bet amount must be greater than zero.")
-        if win_probability <= 0 or win_probability >= 1:
-            raise ValidationException("Win probability must be greater than 0 and less than 1.")
         if house_edge < 0 or house_edge >= 1:
             raise ValidationException("House edge must be between 0 and 1.")
-
-        current_stake = self._to_decimal(gambler["current_stake"])
-        min_bet = self._to_decimal(preferences["min_bet"])
-        max_bet = self._to_decimal(preferences["max_bet"])
-
-        if bet_amount < min_bet:
-            raise ValidationException(f"Bet amount must be at least {min_bet:.2f}.")
-        if bet_amount > max_bet:
-            raise ValidationException(f"Bet amount must be at most {max_bet:.2f}.")
-        if bet_amount > current_stake:
-            raise ValidationException("Bet amount cannot be greater than the current stake.")
 
     def _get_gambler(self, gambler_id):
         return fetch_one("SELECT * FROM gamblers WHERE id = %s", (gambler_id,))

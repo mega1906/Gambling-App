@@ -6,6 +6,7 @@ from mysql.connector import Error
 from app.db import execute_many, execute_write, fetch_all, fetch_one, get_connection
 from app.exceptions import ValidationException
 from app.models import GamblerStatistics
+from app.validation import InputValidator, ValidationConfig
 
 
 GAME_TYPES = [
@@ -21,6 +22,7 @@ GAME_TYPES = [
 class GamblerProfileService:
     def __init__(self, minimum_stake=100.0):
         self.minimum_stake = self._to_decimal(minimum_stake)
+        self.validator = InputValidator(ValidationConfig(min_stake=float(self.minimum_stake), allow_zero_stake=True))
 
     def ensure_gambler_exists(self, gambler_data):
         existing_gambler = self.find_gambler_by_email(gambler_data["email"])
@@ -331,25 +333,15 @@ class GamblerProfileService:
             raise ValidationException("Full name is required.")
         if not email or "@" not in email:
             raise ValidationException("Enter a valid email.")
-        if initial_stake < self.minimum_stake:
-            raise ValidationException(f"Initial stake must be at least {self.minimum_stake:.2f}.")
-        if win_threshold <= initial_stake:
-            raise ValidationException("Win threshold must be greater than initial stake.")
-        if loss_threshold < 0:
-            raise ValidationException("Loss threshold cannot be negative.")
-        if loss_threshold >= initial_stake:
-            raise ValidationException("Loss threshold must be less than initial stake.")
-        if current_stake is not None and current_stake < 0:
-            raise ValidationException("Current stake cannot be negative.")
+        self.validator.validate_initial_stake(initial_stake)
+        self.validator.validate_limits(initial_stake, win_threshold, loss_threshold)
+        if current_stake is not None:
+            self.validator.validate_stake_non_negative(current_stake, "current_stake")
 
         min_bet = preferences.get("min_bet")
         max_bet = preferences.get("max_bet")
-        if min_bet is None or min_bet <= 0:
-            raise ValidationException("Minimum bet must be greater than zero.")
-        if max_bet is None or max_bet < min_bet:
-            raise ValidationException("Maximum bet must be greater than or equal to minimum bet.")
-        if max_bet > initial_stake:
-            raise ValidationException("Maximum bet cannot be greater than initial stake.")
+        self.validator.validate_bet_amount(min_bet, current_stake=initial_stake, min_bet=0.01, max_bet=float(initial_stake), field_name="min_bet")
+        self.validator.validate_bet_amount(max_bet, current_stake=initial_stake, min_bet=float(min_bet), max_bet=float(initial_stake), field_name="max_bet")
         if preferences.get("preferred_game_type") not in GAME_TYPES:
             raise ValidationException("Choose a valid game type.")
         if preferences.get("session_game_limit", 0) <= 0:

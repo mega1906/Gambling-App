@@ -6,10 +6,13 @@ from app.services.game_session_service import GameSessionService
 from app.services.gambler_profile_service import GAME_TYPES, GamblerProfileService
 from app.services.stake_management_service import StakeManagementService
 from app.services.win_loss_service import WinLossService
+from app.validation import InputValidator, SafeInputHandler, ValidationConfig
 
 
 APP_TITLE = "Gambling App - Gambler Profile Management"
 MINIMUM_STAKE = 100.0
+validator = InputValidator(ValidationConfig(min_stake=MINIMUM_STAKE, allow_zero_stake=True))
+input_handler = SafeInputHandler(validator)
 
 
 def print_header(title):
@@ -26,15 +29,11 @@ def choose_option(prompt, valid_choices):
 
 
 def read_text(label):
-    while True:
-        value = input(f"{label}: ").strip()
-        if value:
-            return value
-        print(f"{label} is required.")
+    return input_handler.prompt_text(label)
 
 
 def read_optional_text(label):
-    return input(f"{label}: ").strip() or None
+    return input_handler.prompt_text(label, allow_empty=True)
 
 
 def read_number(label, minimum=None, maximum=None, greater_than=None, less_than=None):
@@ -51,11 +50,10 @@ def read_number(label, minimum=None, maximum=None, greater_than=None, less_than=
     prompt = label if not rules else f"{label} ({', '.join(str(rule) for rule in rules)})"
 
     while True:
-        raw_value = input(f"{prompt}: ").strip()
         try:
-            value = float(raw_value)
-        except ValueError:
-            print("Enter a valid number.")
+            value = input_handler.prompt_number(prompt)
+        except ValidationException as error:
+            print(error)
             continue
 
         if minimum is not None and value < minimum:
@@ -74,18 +72,8 @@ def read_number(label, minimum=None, maximum=None, greater_than=None, less_than=
 
 
 def read_int(label, minimum=None):
-    while True:
-        raw_value = input(f"{label}{f' (>= {minimum})' if minimum is not None else ''}: ").strip()
-        try:
-            value = int(raw_value)
-        except ValueError:
-            print("Enter a whole number.")
-            continue
-
-        if minimum is not None and value < minimum:
-            print(f"Value must be at least {minimum}.")
-            continue
-        return value
+    prompt = f"{label}{f' (>= {minimum})' if minimum is not None else ''}"
+    return input_handler.prompt_int(prompt, minimum=minimum)
 
 
 def choose_game_type():
@@ -271,6 +259,15 @@ def show_recent_bets(bets):
             f"Stake After: {bet.stake_after:.2f} | "
             f"{bet.placed_at}"
         )
+
+
+def get_betting_limits(profile_service, gambler_id):
+    stats = profile_service.retrieve_gambler_statistics(gambler_id)
+    return {
+        "min_bet": float(stats.min_bet),
+        "max_bet": float(stats.max_bet),
+        "current_stake": float(stats.current_stake),
+    }
 
 
 def show_session_list(sessions):
@@ -522,7 +519,7 @@ def adjust_stake_flow(service, gambler_id):
 
 
 def read_probability():
-    return read_number("Win Probability", greater_than=0, less_than=1)
+    return input_handler.prompt_number("Win Probability", validator_fn=validator.validate_probability, field_name="win_probability")
 
 
 def stake_management_menu(service, gambler_id):
@@ -560,8 +557,13 @@ def stake_management_menu(service, gambler_id):
             return
 
 
-def place_single_bet_flow(service, gambler_id):
-    amount = read_number("Bet Amount", minimum=0.01)
+def place_single_bet_flow(profile_service, service, gambler_id):
+    limits = get_betting_limits(profile_service, gambler_id)
+    amount = read_number(
+        "Bet Amount",
+        minimum=limits["min_bet"],
+        maximum=min(limits["max_bet"], limits["current_stake"]),
+    )
     probability = read_probability()
     outcome_strategy = choose_outcome_strategy()
     house_edge = read_number("House Edge", minimum=0, less_than=1) if outcome_strategy == "WEIGHTED" else 0
@@ -580,7 +582,8 @@ def place_single_bet_flow(service, gambler_id):
     show_bet_record(bet)
 
 
-def place_strategy_bets_flow(service, gambler_id):
+def place_strategy_bets_flow(profile_service, service, gambler_id):
+    limits = get_betting_limits(profile_service, gambler_id)
     strategy_type = choose_strategy_type()
     probability = read_probability()
     outcome_strategy = choose_outcome_strategy()
@@ -592,7 +595,11 @@ def place_strategy_bets_flow(service, gambler_id):
     percentage_value = None
 
     if strategy_type in {"FIXED_AMOUNT", "MARTINGALE", "REVERSE_MARTINGALE", "FIBONACCI", "DALEMBERT"}:
-        fixed_amount = read_number("Base Bet Amount", minimum=0.01)
+        fixed_amount = read_number(
+            "Base Bet Amount",
+            minimum=limits["min_bet"],
+            maximum=min(limits["max_bet"], limits["current_stake"]),
+        )
     elif strategy_type == "PERCENTAGE":
         percentage_value = read_number("Percentage of Current Stake", greater_than=0, less_than=100)
 
@@ -611,7 +618,7 @@ def place_strategy_bets_flow(service, gambler_id):
     show_betting_session_summary(summary)
 
 
-def betting_menu(service, gambler_id):
+def betting_menu(profile_service, service, gambler_id):
     while True:
         print_header("Betting Menu")
         print("1. Place single bet")
@@ -622,9 +629,9 @@ def betting_menu(service, gambler_id):
         choice = choose_option("Choose an option", ["1", "2", "3", "4"])
 
         if choice == "1":
-            place_single_bet_flow(service, gambler_id)
+            place_single_bet_flow(profile_service, service, gambler_id)
         elif choice == "2":
-            place_strategy_bets_flow(service, gambler_id)
+            place_strategy_bets_flow(profile_service, service, gambler_id)
         elif choice == "3":
             show_recent_bets(service.get_recent_bets(gambler_id))
         else:
@@ -804,7 +811,7 @@ def selected_user_menu(profile_service, stake_service, betting_service, win_loss
         elif choice == "6":
             stake_management_menu(stake_service, gambler_id)
         elif choice == "7":
-            betting_menu(betting_service, gambler_id)
+            betting_menu(profile_service, betting_service, gambler_id)
         elif choice == "8":
             win_loss_menu(win_loss_service, betting_service, gambler_id)
         elif choice == "9":

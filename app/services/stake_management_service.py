@@ -3,6 +3,7 @@ from decimal import Decimal
 from app.db import execute_write, fetch_all, fetch_one, get_connection
 from app.exceptions import ValidationException
 from app.models import StakeBoundaryStatus, StakeHistoryReport, StakeMonitorSummary, StakeTransaction
+from app.validation import InputValidator, ValidationConfig
 
 
 TRANSACTION_TYPES = [
@@ -18,14 +19,15 @@ TRANSACTION_TYPES = [
 
 
 class StakeManagementService:
+    def __init__(self):
+        self.validator = InputValidator(ValidationConfig(allow_zero_stake=True))
+
     def initialize_stake(self, gambler_id, amount, note="Stake initialized"):
         gambler = self._get_gambler(gambler_id)
         if not gambler:
             raise ValidationException("Gambler profile not found.")
 
-        amount = self._to_decimal(amount)
-        if amount <= 0:
-            raise ValidationException("Initial stake must be greater than zero.")
+        amount = self._to_decimal(self.validator.validate_initial_stake(amount))
 
         win_gap = self._to_decimal(gambler["win_threshold"]) - self._to_decimal(gambler["initial_stake"])
         loss_gap = self._to_decimal(gambler["initial_stake"]) - self._to_decimal(gambler["loss_threshold"])
@@ -68,9 +70,7 @@ class StakeManagementService:
         return self._apply_balance_change(gambler_id, -amount, "WITHDRAWAL", note)
 
     def apply_bet_result(self, gambler_id, amount, outcome, note=None):
-        amount = self._to_decimal(amount)
-        if amount <= 0:
-            raise ValidationException("Bet amount must be greater than zero.")
+        amount = self._to_decimal(self.validator.validate_bet_amount(amount, current_stake=10**9, min_bet=0.01, max_bet=10**9))
 
         outcome = outcome.upper()
         if outcome not in {"WIN", "LOSS"}:
@@ -85,9 +85,7 @@ class StakeManagementService:
         if not gambler:
             raise ValidationException("Gambler profile not found.")
 
-        new_stake = self._to_decimal(new_stake)
-        if new_stake < 0:
-            raise ValidationException("Stake cannot be negative.")
+        new_stake = self._to_decimal(self.validator.validate_stake_non_negative(new_stake, "new_stake"))
 
         current_stake = self._to_decimal(gambler["current_stake"])
         difference = new_stake - current_stake

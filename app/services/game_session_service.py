@@ -4,6 +4,7 @@ from app.db import fetch_all, fetch_one, get_connection
 from app.exceptions import ValidationException
 from app.models import GamePlayRecord, GamingSessionSummary, PauseRecord
 from app.services.betting_service import BettingService
+from app.validation import InputValidator, ValidationConfig
 
 
 SESSION_STATUSES = ["ACTIVE", "PAUSED", "ENDED_WIN", "ENDED_LOSS", "ENDED_MANUAL", "ENDED_LIMIT", "ENDED_MAX_GAMES"]
@@ -13,6 +14,7 @@ SESSION_END_REASONS = ["UPPER_LIMIT_REACHED", "LOWER_LIMIT_REACHED", "MANUAL_EXI
 class GameSessionService:
     def __init__(self, betting_service=None):
         self.betting_service = betting_service or BettingService()
+        self.validator = InputValidator(ValidationConfig(allow_zero_stake=True))
 
     def start_new_session(self, gambler_id, default_bet_amount, default_win_probability, max_games):
         gambler = self._get_gambler(gambler_id)
@@ -22,12 +24,10 @@ class GameSessionService:
         if self._find_open_session(gambler_id):
             raise ValidationException("This gambler already has an open session.")
 
-        default_bet_amount = self._to_decimal(default_bet_amount)
-        default_win_probability = self._to_decimal(default_win_probability)
-        if default_bet_amount <= 0:
-            raise ValidationException("Default bet amount must be greater than zero.")
-        if default_win_probability <= 0 or default_win_probability >= 1:
-            raise ValidationException("Win probability must be greater than 0 and less than 1.")
+        default_bet_amount = self._to_decimal(
+            self.validator.validate_bet_amount(default_bet_amount, current_stake=10**9, min_bet=0.01, max_bet=10**9, field_name="default_bet_amount")
+        )
+        default_win_probability = self._to_decimal(self.validator.validate_probability(default_win_probability, "default_win_probability"))
         if max_games <= 0:
             raise ValidationException("Max games must be greater than zero.")
 
