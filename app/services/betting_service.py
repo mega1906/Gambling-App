@@ -15,9 +15,30 @@ STRATEGY_TYPES = [
     "DALEMBERT",
 ]
 
+OUTCOME_STRATEGIES = [
+    "RANDOM",
+    "WEIGHTED",
+]
+
+ODDS_TYPES = [
+    "PROBABILITY_BASED",
+    "FIXED",
+]
+
 
 class BettingService:
-    def place_bet(self, gambler_id, bet_amount, win_probability, strategy_type="FIXED_AMOUNT", session_id=None):
+    def place_bet(
+        self,
+        gambler_id,
+        bet_amount,
+        win_probability,
+        strategy_type="FIXED_AMOUNT",
+        session_id=None,
+        outcome_strategy="RANDOM",
+        house_edge=0,
+        odds_type="PROBABILITY_BASED",
+        fixed_odds=None,
+    ):
         gambler = self._get_gambler(gambler_id)
         preferences = self._get_preferences(gambler_id)
         if not gambler or not preferences:
@@ -25,13 +46,21 @@ class BettingService:
 
         bet_amount = self._to_decimal(bet_amount)
         win_probability = self._to_decimal(win_probability)
-        self._validate_bet(gambler, preferences, bet_amount, win_probability, strategy_type)
+        house_edge = self._to_decimal(house_edge)
+        strategy_type = strategy_type.upper()
+        outcome_strategy = outcome_strategy.upper()
+        odds_type = odds_type.upper()
+
+        self._validate_bet(gambler, preferences, bet_amount, win_probability, strategy_type, outcome_strategy, odds_type, house_edge)
 
         stake_before = self._to_decimal(gambler["current_stake"])
-        outcome = "WIN" if self._is_win(win_probability) else "LOSS"
-        odds_multiplier = self._calculate_odds_multiplier(win_probability)
+        effective_probability = self._effective_probability(win_probability, outcome_strategy, house_edge)
+        outcome = "WIN" if self._is_win(effective_probability) else "LOSS"
+        odds_multiplier = self._calculate_odds_multiplier(win_probability, odds_type, fixed_odds)
         payout_amount = self._calculate_payout(bet_amount, odds_multiplier, outcome)
         stake_after = self._round_money(stake_before + payout_amount)
+        streaks = self._get_streak_snapshot(gambler_id)
+        current_win_streak, current_loss_streak, longest_win_streak, longest_loss_streak = self._calculate_streaks(streaks, outcome)
 
         connection = get_connection()
         cursor = connection.cursor()
@@ -58,6 +87,33 @@ class BettingService:
                 ),
             )
             bet_id = cursor.lastrowid
+
+            cursor.execute(
+                """
+                INSERT INTO game_results (
+                    bet_id, gambler_id, outcome_strategy, result_type, payout_amount, net_change,
+                    stake_before, stake_after, win_probability, house_edge, current_win_streak,
+                    current_loss_streak, longest_win_streak, longest_loss_streak, created_at
+                )
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW())
+                """,
+                (
+                    bet_id,
+                    gambler_id,
+                    outcome_strategy,
+                    outcome,
+                    abs(payout_amount),
+                    payout_amount,
+                    stake_before,
+                    stake_after,
+                    win_probability,
+                    house_edge,
+                    current_win_streak,
+                    current_loss_streak,
+                    longest_win_streak,
+                    longest_loss_streak,
+                ),
+            )
 
             cursor.execute(
                 """
@@ -124,7 +180,19 @@ class BettingService:
 
         return self.get_bet_record(bet_id)
 
-    def place_bet_with_strategy(self, gambler_id, strategy_type, win_probability, fixed_amount=None, percentage_value=None, rounds=1):
+    def place_bet_with_strategy(
+        self,
+        gambler_id,
+        strategy_type,
+        win_probability,
+        fixed_amount=None,
+        percentage_value=None,
+        rounds=1,
+        outcome_strategy="RANDOM",
+        house_edge=0,
+        odds_type="PROBABILITY_BASED",
+        fixed_odds=None,
+    ):
         strategy_type = strategy_type.upper()
         if strategy_type not in STRATEGY_TYPES:
             raise ValidationException("Choose a valid betting strategy.")
@@ -136,7 +204,6 @@ class BettingService:
         fibonacci_index = 0
         dalembert_step = Decimal("1.00")
         current_amount = self._to_decimal(fixed_amount or 0)
-        bet_records = []
 
         previous_outcome = None
         try:
@@ -168,8 +235,17 @@ class BettingService:
                     amount = current_amount
 
                 amount = self._fit_amount_to_limits(amount, preferences, stake)
-                bet_record = self.place_bet(gambler_id, amount, win_probability, strategy_type, session_id)
-                bet_records.append(bet_record)
+                bet_record = self.place_bet(
+                    gambler_id,
+                    amount,
+                    win_probability,
+                    strategy_type,
+                    session_id,
+                    outcome_strategy=outcome_strategy,
+                    house_edge=house_edge,
+                    odds_type=odds_type,
+                    fixed_odds=fixed_odds,
+                )
                 previous_outcome = bet_record.outcome
 
                 if strategy_type == "MARTINGALE":
@@ -194,6 +270,17 @@ class BettingService:
             raise
 
         return self.get_session_summary(session_id)
+
+    def determine_bet_outcome(self, win_probability, outcome_strategy="RANDOM", house_edge=0):
+        win_probability = self._to_decimal(win_probability)
+        house_edge = self._to_decimal(house_edge)
+        outcome_strategy = outcome_strategy.upper()
+        if outcome_strategy not in OUTCOME_STRATEGIES:
+            raise ValidationException("Choose a valid outcome strategy.")
+        if win_probability <= 0 or win_probability >= 1:
+            raise ValidationException("Win probability must be greater than 0 and less than 1.")
+        effective_probability = self._effective_probability(win_probability, outcome_strategy, house_edge)
+        return "WIN" if self._is_win(effective_probability) else "LOSS"
 
     def get_bet_record(self, bet_id):
         row = fetch_one(
@@ -340,13 +427,19 @@ class BettingService:
             cursor.close()
             connection.close()
 
-    def _validate_bet(self, gambler, preferences, bet_amount, win_probability, strategy_type):
-        if strategy_type.upper() not in STRATEGY_TYPES:
+    def _validate_bet(self, gambler, preferences, bet_amount, win_probability, strategy_type, outcome_strategy, odds_type, house_edge):
+        if strategy_type not in STRATEGY_TYPES:
             raise ValidationException("Choose a valid betting strategy.")
+        if outcome_strategy not in OUTCOME_STRATEGIES:
+            raise ValidationException("Choose a valid outcome strategy.")
+        if odds_type not in ODDS_TYPES:
+            raise ValidationException("Choose a valid odds type.")
         if bet_amount <= 0:
             raise ValidationException("Bet amount must be greater than zero.")
         if win_probability <= 0 or win_probability >= 1:
             raise ValidationException("Win probability must be greater than 0 and less than 1.")
+        if house_edge < 0 or house_edge >= 1:
+            raise ValidationException("House edge must be between 0 and 1.")
 
         current_stake = self._to_decimal(gambler["current_stake"])
         min_bet = self._to_decimal(preferences["min_bet"])
@@ -365,7 +458,9 @@ class BettingService:
     def _get_preferences(self, gambler_id):
         return fetch_one("SELECT * FROM betting_preferences WHERE gambler_id = %s", (gambler_id,))
 
-    def _calculate_odds_multiplier(self, win_probability):
+    def _calculate_odds_multiplier(self, win_probability, odds_type, fixed_odds=None):
+        if odds_type == "FIXED":
+            return self._round_money(self._to_decimal(fixed_odds or 2.0))
         house_margin = Decimal("0.95")
         return self._round_money(house_margin / win_probability)
 
@@ -376,6 +471,50 @@ class BettingService:
 
     def _is_win(self, win_probability):
         return Decimal(str(random.random())) <= win_probability
+
+    def _effective_probability(self, win_probability, outcome_strategy, house_edge):
+        if outcome_strategy == "WEIGHTED":
+            adjusted_probability = win_probability - house_edge
+            minimum_probability = Decimal("0.01")
+            return adjusted_probability if adjusted_probability > minimum_probability else minimum_probability
+        return win_probability
+
+    def _get_streak_snapshot(self, gambler_id):
+        last_result = fetch_one(
+            """
+            SELECT current_win_streak, current_loss_streak, longest_win_streak, longest_loss_streak
+            FROM game_results
+            WHERE gambler_id = %s
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (gambler_id,),
+        )
+        if not last_result:
+            return {
+                "current_win_streak": 0,
+                "current_loss_streak": 0,
+                "longest_win_streak": 0,
+                "longest_loss_streak": 0,
+            }
+        return last_result
+
+    def _calculate_streaks(self, streaks, outcome):
+        current_win_streak = streaks["current_win_streak"]
+        current_loss_streak = streaks["current_loss_streak"]
+        longest_win_streak = streaks["longest_win_streak"]
+        longest_loss_streak = streaks["longest_loss_streak"]
+
+        if outcome == "WIN":
+            current_win_streak += 1
+            current_loss_streak = 0
+            longest_win_streak = max(longest_win_streak, current_win_streak)
+        else:
+            current_loss_streak += 1
+            current_win_streak = 0
+            longest_loss_streak = max(longest_loss_streak, current_loss_streak)
+
+        return current_win_streak, current_loss_streak, longest_win_streak, longest_loss_streak
 
     def _fit_amount_to_limits(self, amount, preferences, current_stake):
         min_bet = self._to_decimal(preferences["min_bet"])

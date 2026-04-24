@@ -130,6 +130,34 @@ def initialize_database():
         )
         cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS game_results (
+                id INT AUTO_INCREMENT PRIMARY KEY,
+                bet_id INT NOT NULL,
+                gambler_id INT NOT NULL,
+                outcome_strategy VARCHAR(30) NOT NULL,
+                result_type VARCHAR(10) NOT NULL,
+                payout_amount DECIMAL(10, 2) NOT NULL,
+                net_change DECIMAL(10, 2) NOT NULL,
+                stake_before DECIMAL(10, 2) NOT NULL,
+                stake_after DECIMAL(10, 2) NOT NULL,
+                win_probability DECIMAL(5, 4) NOT NULL,
+                house_edge DECIMAL(5, 4) NOT NULL DEFAULT 0.0000,
+                current_win_streak INT NOT NULL DEFAULT 0,
+                current_loss_streak INT NOT NULL DEFAULT 0,
+                longest_win_streak INT NOT NULL DEFAULT 0,
+                longest_loss_streak INT NOT NULL DEFAULT 0,
+                created_at DATETIME NOT NULL,
+                CONSTRAINT fk_game_results_bet
+                    FOREIGN KEY (bet_id) REFERENCES bets(id)
+                    ON DELETE CASCADE,
+                CONSTRAINT fk_game_results_gambler
+                    FOREIGN KEY (gambler_id) REFERENCES gamblers(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+        cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS gaming_sessions (
                 id INT AUTO_INCREMENT PRIMARY KEY,
                 gambler_id INT NOT NULL,

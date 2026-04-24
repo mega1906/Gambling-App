@@ -100,6 +100,26 @@ class GamePlayRecord:
 
 
 @dataclass
+class GameResultRecord:
+    result_id: int
+    bet_id: int
+    gambler_id: int
+    outcome_strategy: str
+    result_type: str
+    payout_amount: float
+    net_change: float
+    stake_before: float
+    stake_after: float
+    win_probability: float
+    house_edge: float
+    current_win_streak: int
+    current_loss_streak: int
+    longest_win_streak: int
+    longest_loss_streak: int
+    created_at: str
+
+
+@dataclass
 class PauseRecord:
     pause_id: int
     session_id: int
@@ -128,6 +148,39 @@ class GamingSessionSummary:
     total_pause_seconds: int
     games: list[GamePlayRecord]
     pauses: list[PauseRecord]
+
+
+@dataclass
+class WinLossStatistics:
+    gambler_id: int
+    total_games: int
+    wins: int
+    losses: int
+    win_rate: float
+    loss_rate: float
+    win_loss_ratio: float
+    total_winnings: float
+    total_losses_amount: float
+    net_profit_loss: float
+    average_win: float
+    average_loss: float
+    largest_win: float
+    largest_loss: float
+    current_win_streak: int
+    current_loss_streak: int
+    longest_win_streak: int
+    longest_loss_streak: int
+    profit_factor: float
+
+
+@dataclass
+class RunningTotalsSummary:
+    gambler_id: int
+    total_games: int
+    current_balance: float
+    net_profit_loss: float
+    balance_history: list[float]
+    last_results: list[GameResultRecord]
 
 
 @dataclass

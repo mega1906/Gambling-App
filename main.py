@@ -1,10 +1,11 @@
 from app.default_user import CURRENT_USER
 from app.exceptions import ValidationException
 from app.schema import initialize_database
-from app.services.betting_service import STRATEGY_TYPES, BettingService
+from app.services.betting_service import ODDS_TYPES, OUTCOME_STRATEGIES, STRATEGY_TYPES, BettingService
 from app.services.game_session_service import GameSessionService
 from app.services.gambler_profile_service import GAME_TYPES, GamblerProfileService
 from app.services.stake_management_service import StakeManagementService
+from app.services.win_loss_service import WinLossService
 
 
 APP_TITLE = "Gambling App - Gambler Profile Management"
@@ -103,6 +104,24 @@ def choose_strategy_type():
 
     choice = choose_option("Choose strategy", [str(index) for index in range(1, len(STRATEGY_TYPES) + 1)])
     return STRATEGY_TYPES[int(choice) - 1]
+
+
+def choose_outcome_strategy():
+    print_header("Outcome Strategies")
+    for index, strategy in enumerate(OUTCOME_STRATEGIES, start=1):
+        print(f"{index}. {strategy}")
+
+    choice = choose_option("Choose outcome strategy", [str(index) for index in range(1, len(OUTCOME_STRATEGIES) + 1)])
+    return OUTCOME_STRATEGIES[int(choice) - 1]
+
+
+def choose_odds_type():
+    print_header("Odds Types")
+    for index, odds_type in enumerate(ODDS_TYPES, start=1):
+        print(f"{index}. {odds_type}")
+
+    choice = choose_option("Choose odds type", [str(index) for index in range(1, len(ODDS_TYPES) + 1)])
+    return ODDS_TYPES[int(choice) - 1]
 
 
 def show_startup_info(init_result):
@@ -310,6 +329,66 @@ def show_game_session_summary(summary):
             )
 
 
+def show_win_loss_statistics(stats):
+    print_header("Win/Loss Statistics")
+    print(f"Total Games: {stats.total_games}")
+    print(f"Wins: {stats.wins}")
+    print(f"Losses: {stats.losses}")
+    print(f"Win Rate: {stats.win_rate:.2f}%")
+    print(f"Loss Rate: {stats.loss_rate:.2f}%")
+    print(f"Win/Loss Ratio: {stats.win_loss_ratio}")
+    print(f"Total Winnings: {stats.total_winnings:.2f}")
+    print(f"Total Losses: {stats.total_losses_amount:.2f}")
+    print(f"Net Profit/Loss: {stats.net_profit_loss:.2f}")
+    print(f"Average Win: {stats.average_win:.2f}")
+    print(f"Average Loss: {stats.average_loss:.2f}")
+    print(f"Largest Win: {stats.largest_win:.2f}")
+    print(f"Largest Loss: {stats.largest_loss:.2f}")
+    print(f"Current Win Streak: {stats.current_win_streak}")
+    print(f"Current Loss Streak: {stats.current_loss_streak}")
+    print(f"Longest Win Streak: {stats.longest_win_streak}")
+    print(f"Longest Loss Streak: {stats.longest_loss_streak}")
+    print(f"Profit Factor: {stats.profit_factor}")
+
+
+def show_running_totals(summary):
+    print_header("Running Totals")
+    print(f"Total Games: {summary.total_games}")
+    print(f"Current Balance: {summary.current_balance:.2f}")
+    print(f"Net Profit/Loss: {summary.net_profit_loss:.2f}")
+    print(f"Balance History: {', '.join(f'{balance:.2f}' for balance in summary.balance_history) if summary.balance_history else 'No history'}")
+    print_header("Recent Results")
+    if not summary.last_results:
+        print("No results found.")
+        return
+
+    for result in summary.last_results:
+        print(
+            f"{result.result_id}. {result.result_type} | "
+            f"Net Change: {result.net_change:.2f} | "
+            f"Stake After: {result.stake_after:.2f} | "
+            f"Win Streak: {result.current_win_streak} | "
+            f"Loss Streak: {result.current_loss_streak}"
+        )
+
+
+def show_recent_game_results(results):
+    print_header("Recent Game Results")
+    if not results:
+        print("No results found.")
+        return
+
+    for result in results:
+        print(
+            f"{result.result_id}. {result.result_type} | "
+            f"Strategy: {result.outcome_strategy} | "
+            f"Payout: {result.payout_amount:.2f} | "
+            f"Net Change: {result.net_change:.2f} | "
+            f"Stake After: {result.stake_after:.2f} | "
+            f"{result.created_at}"
+        )
+
+
 def collect_user_data():
     full_name = read_text("Name")
     email = read_text("Email")
@@ -484,13 +563,30 @@ def stake_management_menu(service, gambler_id):
 def place_single_bet_flow(service, gambler_id):
     amount = read_number("Bet Amount", minimum=0.01)
     probability = read_probability()
-    bet = service.place_bet(gambler_id, amount, probability, "FIXED_AMOUNT")
+    outcome_strategy = choose_outcome_strategy()
+    house_edge = read_number("House Edge", minimum=0, less_than=1) if outcome_strategy == "WEIGHTED" else 0
+    odds_type = choose_odds_type()
+    fixed_odds = read_number("Fixed Odds Multiplier", greater_than=1) if odds_type == "FIXED" else None
+    bet = service.place_bet(
+        gambler_id,
+        amount,
+        probability,
+        "FIXED_AMOUNT",
+        outcome_strategy=outcome_strategy,
+        house_edge=house_edge,
+        odds_type=odds_type,
+        fixed_odds=fixed_odds,
+    )
     show_bet_record(bet)
 
 
 def place_strategy_bets_flow(service, gambler_id):
     strategy_type = choose_strategy_type()
     probability = read_probability()
+    outcome_strategy = choose_outcome_strategy()
+    house_edge = read_number("House Edge", minimum=0, less_than=1) if outcome_strategy == "WEIGHTED" else 0
+    odds_type = choose_odds_type()
+    fixed_odds = read_number("Fixed Odds Multiplier", greater_than=1) if odds_type == "FIXED" else None
     rounds = read_int("Number of Bets", minimum=1)
     fixed_amount = None
     percentage_value = None
@@ -507,6 +603,10 @@ def place_strategy_bets_flow(service, gambler_id):
         fixed_amount=fixed_amount,
         percentage_value=percentage_value,
         rounds=rounds,
+        outcome_strategy=outcome_strategy,
+        house_edge=house_edge,
+        odds_type=odds_type,
+        fixed_odds=fixed_odds,
     )
     show_betting_session_summary(summary)
 
@@ -527,6 +627,38 @@ def betting_menu(service, gambler_id):
             place_strategy_bets_flow(service, gambler_id)
         elif choice == "3":
             show_recent_bets(service.get_recent_bets(gambler_id))
+        else:
+            return
+
+
+def preview_outcome_flow(service):
+    probability = read_probability()
+    outcome_strategy = choose_outcome_strategy()
+    house_edge = read_number("House Edge", minimum=0, less_than=1) if outcome_strategy == "WEIGHTED" else 0
+    result = service.determine_bet_outcome(probability, outcome_strategy, house_edge)
+    print_header("Outcome Preview")
+    print(f"Outcome: {result}")
+
+
+def win_loss_menu(win_loss_service, betting_service, gambler_id):
+    while True:
+        print_header("Win/Loss Menu")
+        print("1. Win/loss statistics")
+        print("2. Running totals")
+        print("3. Recent game results")
+        print("4. Preview outcome")
+        print("5. Back")
+
+        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5"])
+
+        if choice == "1":
+            show_win_loss_statistics(win_loss_service.get_win_loss_statistics(gambler_id))
+        elif choice == "2":
+            show_running_totals(win_loss_service.get_running_totals(gambler_id))
+        elif choice == "3":
+            show_recent_game_results(win_loss_service.get_recent_results(gambler_id))
+        elif choice == "4":
+            preview_outcome_flow(betting_service)
         else:
             return
 
@@ -642,7 +774,7 @@ def game_sessions_menu(service, gambler_id):
             return
 
 
-def selected_user_menu(profile_service, stake_service, betting_service, game_session_service, gambler_id):
+def selected_user_menu(profile_service, stake_service, betting_service, win_loss_service, game_session_service, gambler_id):
     while True:
         print_header("Selected User Menu")
         print("1. View user details")
@@ -652,10 +784,11 @@ def selected_user_menu(profile_service, stake_service, betting_service, game_ses
         print("5. Deactivate user")
         print("6. Stake management")
         print("7. Betting")
-        print("8. Game sessions")
-        print("9. Back")
+        print("8. Win/loss analytics")
+        print("9. Game sessions")
+        print("10. Back")
 
-        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5", "6", "7", "8", "9"])
+        choice = choose_option("Choose an option", ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10"])
 
         if choice == "1":
             show_gambler_details(profile_service.retrieve_gambler_statistics(gambler_id))
@@ -673,6 +806,8 @@ def selected_user_menu(profile_service, stake_service, betting_service, game_ses
         elif choice == "7":
             betting_menu(betting_service, gambler_id)
         elif choice == "8":
+            win_loss_menu(win_loss_service, betting_service, gambler_id)
+        elif choice == "9":
             game_sessions_menu(game_session_service, gambler_id)
         else:
             return
@@ -683,6 +818,7 @@ def main():
     profile_service = GamblerProfileService(minimum_stake=MINIMUM_STAKE)
     stake_service = StakeManagementService()
     betting_service = BettingService()
+    win_loss_service = WinLossService()
     game_session_service = GameSessionService(betting_service)
     profile_service.ensure_gambler_exists(CURRENT_USER)
     show_startup_info(init_result)
@@ -702,7 +838,7 @@ def main():
             elif choice == "2":
                 gambler_id = choose_current_user(profile_service)
                 if gambler_id is not None:
-                    selected_user_menu(profile_service, stake_service, betting_service, game_session_service, gambler_id)
+                    selected_user_menu(profile_service, stake_service, betting_service, win_loss_service, game_session_service, gambler_id)
             elif choice == "3":
                 show_gambler_list(profile_service.list_gamblers())
             else:
