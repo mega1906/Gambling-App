@@ -1,28 +1,16 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import math
+import re
 
 from app.exceptions import (
     BetValidationException,
     LimitValidationException,
     ProbabilityValidationException,
     StakeValidationException,
+    TextValidationException,
     ValidationErrorType,
     ValidationException,
 )
-
-
-@dataclass
-class ValidationResult:
-    is_valid: bool = True
-    errors: list[str] = field(default_factory=list)
-    warnings: list[str] = field(default_factory=list)
-
-    def add_error(self, message):
-        self.is_valid = False
-        self.errors.append(message)
-
-    def add_warning(self, message):
-        self.warnings.append(message)
 
 
 @dataclass(frozen=True)
@@ -120,6 +108,42 @@ class InputValidator:
             )
         return value
 
+    def validate_name(self, value, field_name="full_name"):
+        if not value or not value.strip():
+            raise TextValidationException(f"{field_name} is required.", field_name, value)
+        value = value.strip()
+        if len(value) < 2:
+            raise TextValidationException(f"{field_name} must be at least 2 characters long.", field_name, value)
+        if len(value) > 100:
+            raise TextValidationException(f"{field_name} must be at most 100 characters long.", field_name, value)
+        if not re.match(r"^[a-zA-Z\s\-']+$", value):
+            raise TextValidationException(f"{field_name} can only contain letters, spaces, hyphens, and apostrophes.", field_name, value)
+        return value
+
+    def validate_email(self, value, field_name="email"):
+        if not value or not value.strip():
+            raise TextValidationException(f"{field_name} is required.", field_name, value)
+        value = value.strip()
+        if len(value) > 100:
+            raise TextValidationException(f"{field_name} must be at most 100 characters long.", field_name, value)
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, value):
+            raise TextValidationException(f"Enter a valid email address for {field_name}.", field_name, value)
+        return value
+
+    def validate_phone_number(self, value, field_name="phone_number"):
+        if not value or not value.strip():
+            raise TextValidationException(f"{field_name} is required.", field_name, value)
+        value = value.strip()
+        if len(value) > 20:
+            raise TextValidationException(f"{field_name} must be at most 20 characters long.", field_name, value)
+        if not re.match(r'^[\d\s\-\(\)\+]+$', value):
+            raise TextValidationException(f"{field_name} can only contain digits, spaces, hyphens, parentheses, and plus sign.", field_name, value)
+        digits_only = re.sub(r'\D', '', value)
+        if len(digits_only) < 7:
+            raise TextValidationException(f"{field_name} must contain at least 7 digits.", field_name, value)
+        return value
+
 
 class SafeInputHandler:
     def __init__(self, validator=None):
@@ -154,3 +178,27 @@ class SafeInputHandler:
                 print(f"{label} must be at least {minimum}.")
                 continue
             return value
+
+    def prompt_name(self, label="Name"):
+        while True:
+            value = input(f"{label}: ").strip()
+            try:
+                return self.validator.validate_name(value, label.lower().replace(" ", "_"))
+            except ValidationException as error:
+                print(error)
+
+    def prompt_email(self, label="Email"):
+        while True:
+            value = input(f"{label}: ").strip()
+            try:
+                return self.validator.validate_email(value, label.lower())
+            except ValidationException as error:
+                print(error)
+
+    def prompt_phone_number(self, label="Phone Number"):
+        while True:
+            value = input(f"{label}: ").strip()
+            try:
+                return self.validator.validate_phone_number(value, label.lower().replace(" ", "_"))
+            except ValidationException as error:
+                print(error)

@@ -9,6 +9,7 @@ class ValidationErrorType(Enum):
     NUMERIC_ERROR = "NUMERIC_ERROR"
     RANGE_ERROR = "RANGE_ERROR"
     NULL_ERROR = "NULL_ERROR"
+    TEXT_ERROR = "TEXT_ERROR"
 
 
 class ValidationException(Exception):
@@ -37,3 +38,8 @@ class LimitValidationException(ValidationException):
 class ProbabilityValidationException(ValidationException):
     def __init__(self, message, field_name=None, attempted_value=None):
         super().__init__(message, ValidationErrorType.PROBABILITY_ERROR, field_name, attempted_value)
+
+
+class TextValidationException(ValidationException):
+    def __init__(self, message, field_name=None, attempted_value=None):
+        super().__init__(message, ValidationErrorType.TEXT_ERROR, field_name, attempted_value)

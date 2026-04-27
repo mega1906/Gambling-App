@@ -18,6 +18,15 @@ GAME_TYPES = [
     "CUSTOM",
 ]
 
+GAME_TYPE_PROBABILITIES = {
+    "COIN_FLIP": 0.5,
+    "DICE": 1/6,
+    "ROULETTE": 1/37,
+    "SLOT_STYLE": 0.05,
+    "PROBABILITY_GAME": 0.5,
+    "CUSTOM": None,
+}
+
 
 class GamblerProfileService:
     def __init__(self, minimum_stake=100.0):

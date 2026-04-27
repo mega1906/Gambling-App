@@ -31,6 +31,14 @@ class GameSessionService:
         if max_games <= 0:
             raise ValidationException("Max games must be greater than zero.")
 
+        session_limit = int(preferences.get("session_game_limit", 0))
+        if session_limit <= 0:
+            raise ValidationException("Gambler session game limit is not configured correctly.")
+        if max_games > session_limit:
+            raise ValidationException(
+                f"Max games must not exceed the gambler's configured session game limit of {session_limit}."
+            )
+
         min_bet = self._to_decimal(preferences["min_bet"])
         max_bet = self._to_decimal(preferences["max_bet"])
         current_stake = self._to_decimal(gambler["current_stake"])
@@ -261,7 +269,8 @@ class GameSessionService:
     def list_sessions(self, gambler_id):
         return fetch_all(
             """
-            SELECT id, status, end_reason, total_games_played, max_games, total_profit, started_at, ended_at
+            SELECT id, status, end_reason, default_bet_amount, total_games_played,
+                   max_games, total_profit, started_at, ended_at
             FROM gaming_sessions
             WHERE gambler_id = %s
             ORDER BY id DESC

@@ -2,15 +2,6 @@ from dataclasses import dataclass
 
 
 @dataclass
-class BettingPreferences:
-    min_bet: float
-    max_bet: float
-    preferred_game_type: str = "CUSTOM"
-    session_game_limit: int = 20
-    notes: str | None = None
-
-
-@dataclass
 class StakeTransaction:
     transaction_id: int
     gambler_id: int
